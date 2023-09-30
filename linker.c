@@ -160,17 +160,23 @@ int main(int argc, char* argv[]) {
         for (uint32_t j = 0; j < files[i].symbolTableSize; ++j) {
             if (files[i].symbolTable[j].location == 'U')
                 continue;
-            if (!strcmp(files[i].symbolTable[j].label, "Stack"))
+            if (!strcmp(files[i].symbolTable[j].label, "Stack")) {
+                printf("Stack defined by obj file\n");
                 exit(1);
+            }
             for (uint32_t ii = 0; ii < i; ++ii)
                 for (uint32_t jj = 0; jj < files[ii].symbolTableSize; ++jj)
                     if ((files[ii].symbolTable[jj].location != 'U') &&
-                        (!strcmp(files[ii].symbolTable[jj].label, files[i].symbolTable[j].label)))
+                        (!strcmp(files[ii].symbolTable[jj].label, files[i].symbolTable[j].label))) {
+                        printf("Duplicate label\n");
                         exit(1);
+                    }
             for (uint32_t jj = 0; jj < j; ++jj)
                 if ((files[i].symbolTable[jj].location != 'U') &&
-                    (!strcmp(files[i].symbolTable[jj].label, files[i].symbolTable[j].label)))
+                    (!strcmp(files[i].symbolTable[jj].label, files[i].symbolTable[j].label))) {
+                    printf("Duplicate label\n");
                     exit(1);
+                }
         }
 
     // reloc address
@@ -259,8 +265,10 @@ uint32_t findLabel(FileData* files, uint32_t fileId, uint32_t relocId, uint32_t 
                 targetSymbolId = j;
                 break;
             }
-    if (!isFound)
+    if (!isFound) {
+        printf("Undefined label");
         exit(1);
+    }
     if (files[targetFileId].symbolTable[targetSymbolId].location == 'D') {
         for (uint32_t i = 0; i < inputFileCnt; ++i)
             addr += files[i].textSize;
