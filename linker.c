@@ -58,6 +58,8 @@ struct CombinedFiles {
 int32_t isLocalLabel(const char* label);
 int32_t isGlobalLabel(const char* label);
 int32_t hasLabel(const char* label);
+uint32_t findLabel(FileData* files, uint32_t fileId, uint32_t relocId, uint32_t inputFileCnt);
+int32_t convertNum(int32_t num);
 
 int main(int argc, char* argv[]) {
     char *inFileString, *outFileString;
@@ -152,12 +154,14 @@ int main(int argc, char* argv[]) {
     //    Begin the linking process
     //    Happy coding!!!
 
-    // check duplicate defined global labels
+    // check duplicate defined global labels, and check Stack defined by obj files
     uint32_t inputFileNum = argc - 2;
     for (uint32_t i = 0; i < inputFileNum; ++i)
         for (uint32_t j = 0; j < files[i].symbolTableSize; ++j) {
             if (files[i].symbolTable[j].location != 'U')
                 continue;
+            if (!strcmp(files[i].symbolTable[j].label, "Stack"))
+                exit(1);
             for (uint32_t ii = 0; ii < i; ii++)
                 for (uint32_t jj = 0; jj < files[ii].symbolTableSize; ++jj)
                     if ((files[ii].symbolTable[jj].location != 'U') &&
@@ -168,6 +172,31 @@ int main(int argc, char* argv[]) {
                     (!strcmp(files[i].symbolTable[jj].label, files[i].symbolTable[j].label)))
                     exit(1);
         }
+
+    // reloc address
+
+    for (uint32_t i = 0; i < inputFileNum; ++i)
+        for (uint32_t j = 0; j < files[i].relocationTableSize; ++j) {
+            RelocationTableEntry* relocEntry = &(files[i].relocTable[j]);
+            uint32_t addr = findLabel(files, i, j, inputFileNum);
+            printf("%s %d\n", relocEntry->label, addr);
+            int32_t* targetMachineCode = NULL;
+            if (!strcmp(relocEntry->inst, ".fill")) {
+                targetMachineCode = &(files[i].data[relocEntry->offset]);
+            } else {
+                targetMachineCode = &(files[i].text[relocEntry->offset]);
+            }
+            (*targetMachineCode) = ((*targetMachineCode) & ((1 << 27) - (1 << 16))) | (addr & ((1 << 16) - 1));
+        }
+
+    // output
+
+    for (uint32_t i = 0; i < inputFileNum; ++i)
+        for (uint32_t j = 0; j < files[i].textSize; ++j)
+            fprintf(outFilePtr, "%d\n", files[i].text[j]);
+    for (uint32_t i = 0; i < inputFileNum; ++i)
+        for (uint32_t j = 0; j < files[i].dataSize; ++j)
+            fprintf(outFilePtr, "%d\n", files[i].data[j]);
 
     return 0;
 
@@ -183,4 +212,69 @@ int32_t isLocalLabel(const char* label) {
 
 int32_t isGlobalLabel(const char* label) {
     return hasLabel(label) && isupper(label[0]);
+}
+
+uint32_t findLabel(FileData* files, uint32_t fileId, uint32_t relocId, uint32_t inputFileCnt) {
+    RelocationTableEntry* relocEntry = &(files[fileId].relocTable[relocId]);
+    char* label = relocEntry->label;
+    uint32_t addr = 0;
+    if (!strcmp(label, "Stack")) {
+        for (uint32_t i = 0; i < inputFileCnt; ++i)
+            addr += files[i].dataSize + files[i].textSize;
+        return addr & ((1 << 16) - 1);
+    }
+    if (isLocalLabel(label)) {
+        int32_t absLoc = 0;
+        int32_t machineCode = 0;
+        if (!strcmp(relocEntry->inst, ".fill")) {
+            machineCode = files[fileId].data[relocEntry->offset];
+        } else {
+            machineCode = files[fileId].text[relocEntry->offset];
+        }
+        absLoc = convertNum(machineCode & ((1 << 16) - 1));
+
+        if (absLoc >= files[fileId].textSize) {
+            for (uint32_t i = 0; i < inputFileCnt; ++i)
+                addr += files[i].textSize;
+            addr -= files[fileId].textSize;
+            for (uint32_t i = 0; i < fileId; ++i)
+                addr += files[i].dataSize;
+        } else {
+            for (uint32_t i = 0; i < fileId; ++i)
+                addr += files[i].textSize;
+        }
+
+        addr += convertNum(machineCode & ((1 << 16) - 1));
+        return addr & ((1 << 16) - 1);
+    }
+    // is global label
+    uint32_t targetFileId = 0, targetSymbolId = 0;
+    uint8_t isFound = 0;
+    for (uint32_t i = 0; i < inputFileCnt && (!isFound); ++i)
+        for (uint32_t j = 0; j < files[i].symbolTableSize; ++j)
+            if ((files[i].symbolTable[j].location != 'U') &&
+                (!strcmp(label, files[i].symbolTable[j].label))) {
+                isFound = 1;
+                targetFileId = i;
+                targetSymbolId = j;
+                break;
+            }
+    if (!isFound)
+        exit(1);
+    if (files[targetFileId].symbolTable[targetSymbolId].location == 'D') {
+        for (uint32_t i = 0; i < inputFileCnt; ++i)
+            addr += files[i].textSize;
+        for (uint32_t i = 0; i < targetFileId; ++i)
+            addr += files[i].dataSize;
+    } else {
+        for (uint32_t i = 0; i < targetFileId; ++i)
+            addr += files[i].textSize;
+    }
+    addr += files[targetFileId].symbolTable[targetSymbolId].offset;
+
+    return addr & ((1 << 16) - 1);
+}
+
+int32_t convertNum(int32_t num) {
+    return num - ((num & (1 << 15)) ? 1 << 16 : 0);
 }
