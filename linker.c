@@ -158,11 +158,11 @@ int main(int argc, char* argv[]) {
     uint32_t inputFileNum = argc - 2;
     for (uint32_t i = 0; i < inputFileNum; ++i)
         for (uint32_t j = 0; j < files[i].symbolTableSize; ++j) {
-            if (files[i].symbolTable[j].location != 'U')
+            if (files[i].symbolTable[j].location == 'U')
                 continue;
             if (!strcmp(files[i].symbolTable[j].label, "Stack"))
                 exit(1);
-            for (uint32_t ii = 0; ii < i; ii++)
+            for (uint32_t ii = 0; ii < i; ++ii)
                 for (uint32_t jj = 0; jj < files[ii].symbolTableSize; ++jj)
                     if ((files[ii].symbolTable[jj].location != 'U') &&
                         (!strcmp(files[ii].symbolTable[jj].label, files[i].symbolTable[j].label)))
